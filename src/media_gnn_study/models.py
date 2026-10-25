@@ -20,73 +20,13 @@ except Exception:
 from .config import *
 from .contracts import *
 from .features import safe_unit_rows
-
-def build_knn_propagation(x_train, x_query, k=5, self_weight=.90, min_similarity=None):
-    xt, xq = safe_unit_rows(x_train), safe_unit_rows(x_query)
-    n, m = len(xt), len(xq)
-    if n < 2 or k < 1 or not (0 <= self_weight <= 1):
-        raise ValueError('Configuração de grafo inválida.')
-
-    # Fontes esparsas podem produzir vetor zero quando não há sinal conhecido
-    # no fold. Esses nós não devem ganhar vizinhos arbitrários por empate em 0.
-    # Política: vetor zero => self-only; vetor zero de treino nunca é candidato.
-    eps = 1e-10
-    train_has_signal = np.linalg.norm(xt, axis=1) >= eps
-    query_has_signal = np.linalg.norm(xq, axis=1) >= eps
-    sim_train = xt @ xt.T
-    sim_query = xq @ xt.T
-    p = np.eye(n, dtype=np.float32)
-    pe = np.zeros((n+m, n+m), dtype=np.float32)
-    edges = []
-
-    def selected(row, own=None):
-        candidates = np.flatnonzero(train_has_signal)
-        if own is not None:
-            candidates = candidates[candidates != own]
-        if len(candidates) == 0:
-            return candidates
-        order = candidates[np.argsort(-row[candidates], kind='stable')]
-        order = order[:min(k, len(order))]
-        if min_similarity is not None:
-            order = order[row[order] >= min_similarity]
-        return order
-
-    for i in range(n):
-        nbr = selected(sim_train[i], own=i) if train_has_signal[i] else np.empty(0, dtype=int)
-        p[i,:] = 0
-        if len(nbr) == 0:
-            p[i,i] = 1.0
-        else:
-            p[i,i] = self_weight
-            p[i,nbr] = (1-self_weight)/len(nbr)
-        for rank,j in enumerate(nbr,1):
-            edges.append(('treino',i,int(j),rank,float(sim_train[i,j])))
-
-    pe[:n,:n] = p
-    for q in range(m):
-        nbr = selected(sim_query[q]) if query_has_signal[q] else np.empty(0, dtype=int)
-        row = n+q
-        if len(nbr) == 0:
-            pe[row,row] = 1.0
-        else:
-            pe[row,row] = self_weight
-            pe[row,nbr] = (1-self_weight)/len(nbr)
-        for rank,j in enumerate(nbr,1):
-            edges.append(('validacao',q,int(j),rank,float(sim_query[q,j])))
-
-    assert np.allclose(p.sum(1),1) and np.allclose(pe.sum(1),1)
-    assert not pe[:n,n:].any()
-    # Zero-signal nodes are guaranteed to be self-only and are never neighbors.
-    zero_train = np.flatnonzero(~train_has_signal)
-    if len(zero_train):
-        assert np.allclose(p[zero_train, zero_train], 1.0)
-        assert not any(int(j) in set(zero_train.tolist()) for _,_,j,_,_ in edges)
-    zero_query = np.flatnonzero(~query_has_signal)
-    for q in zero_query:
-        row=n+int(q)
-        assert pe[row,row] == 1.0 and np.count_nonzero(pe[row]) == 1
-
-    return p, pe, pd.DataFrame(edges, columns=['subset','destino_local','origem_treino_local','rank','cosseno'])
+from .core.graph import (
+    build_knn_propagation,
+    build_knn_edge_arrays,
+    build_knn_edge_index,
+    prune_tfidf_topk,
+    prepare_hetero_term_incidence,
+)
 
 
 class LinearClassifier(nn.Module):
@@ -114,27 +54,6 @@ def _ensure_torch_geometric():
     _ensure_package('torch_geometric', 'torch-geometric>=2.6,<3')
     import torch_geometric
     RUNTIME_INFO['torch_geometric'] = torch_geometric.__version__
-
-
-def build_knn_edge_index(x_train, x_query, k=5, min_similarity=None):
-    """Mesma seleção kNN da GNN fixa, mas retorna apenas arestas j→i.
-
-    Em validação, nós de validação recebem mensagens somente de treino.
-    Self-loops são responsabilidade de cada operador (GCN/GATv2); GraphSAGE
-    usa seu root path nativo. Isso preserva a topologia de vizinhança sem
-    importar o self_weight=0.9 específico do baseline fixo.
-    """
-    _, _, edges = build_knn_propagation(
-        x_train, x_query, k=k, self_weight=0.0, min_similarity=min_similarity
-    )
-    n = len(x_train)
-    src, dst = [], []
-    for row in edges.itertuples(index=False):
-        src.append(int(row.origem_treino_local))
-        dst.append(int(row.destino_local) if row.subset == 'treino' else n + int(row.destino_local))
-    if not src:
-        return torch.empty((2,0), dtype=torch.long, device=DEVICE)
-    return torch.tensor([src,dst], dtype=torch.long, device=DEVICE)
 
 
 class HomogeneousPyGClassifier(nn.Module):
@@ -313,51 +232,6 @@ class HeteroTermGNN(nn.Module):
         h_eval=F.relu(self.work_encoder(x_eval))
         term_state=self._term_state(self.work_to_term(h_train),col_train)
         return self._work_logits(h_eval,row_eval,term_state)
-
-
-def prune_tfidf_topk(a, top_k=None):
-    """Mantém os top-k pesos TF-IDF de cada obra; não usa rótulos."""
-    if top_k is None:
-        return a.copy()
-    x=a.tocsr(copy=True)
-    k=int(top_k)
-    if k < 1:
-        raise ValueError('top_k deve ser >= 1 ou None.')
-    for i in range(x.shape[0]):
-        lo,hi=x.indptr[i],x.indptr[i+1]
-        if hi-lo <= k:
-            continue
-        vals=x.data[lo:hi]
-        keep=np.argpartition(vals,-k)[-k:]
-        mask=np.ones(hi-lo,dtype=bool); mask[keep]=False
-        vals[mask]=0.0
-    x.eliminate_zeros()
-    return x
-
-
-def prepare_hetero_term_incidence(a_train, a_eval, top_k=None):
-    """Incidências TF-IDF normalizadas, opcionalmente podadas por obra."""
-    a_train=prune_tfidf_topk(a_train,top_k)
-    a_eval=prune_tfidf_topk(a_eval,top_k)
-    train=np.asarray(a_train.toarray(),dtype=np.float32)
-    eval_=np.asarray(a_eval.toarray(),dtype=np.float32)
-    # obra→termo para construir estado dos termos: apenas obras de treino.
-    col_sum=train.sum(axis=0,keepdims=True)
-    col_norm=np.divide(train,col_sum,out=np.zeros_like(train),where=col_sum>1e-12)
-    # termo→obra: pesos TF-IDF normalizados dentro de cada obra.
-    row_sum_tr=train.sum(axis=1,keepdims=True)
-    row_sum_ev=eval_.sum(axis=1,keepdims=True)
-    row_train=np.divide(train,row_sum_tr,out=np.zeros_like(train),where=row_sum_tr>1e-12)
-    row_eval=np.divide(eval_,row_sum_ev,out=np.zeros_like(eval_),where=row_sum_ev>1e-12)
-    meta={
-        'term_nodes':int(train.shape[1]),
-        'incidence_train':int(np.count_nonzero(train)),
-        'incidence_eval':int(np.count_nonzero(eval_)),
-        'zero_term_train_rows':int(np.sum(row_sum_tr[:,0]<=1e-12)),
-        'zero_term_eval_rows':int(np.sum(row_sum_ev[:,0]<=1e-12)),
-        'term_top_k':None if top_k is None else int(top_k),
-    }
-    return row_train,col_norm,row_eval,meta
 
 
 def fit_predict_hetero_term(x_train, y_train, x_eval, row_train, col_train, row_eval, seed):
