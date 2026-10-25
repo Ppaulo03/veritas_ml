@@ -1,55 +1,53 @@
 # Media GNN Study
 
-Framework experimental agnóstico para classificação multirrótulo de obras de mídia e benchmark relacional em grafos. O dataset e os artefatos de execução permanecem no Google Drive; o repositório contém contratos, protocolo indutivo, extração de representações, motor de avaliação e testes.
+Framework experimental 100% agnóstico a modelos para classificação multirrótulo de obras de mídia e benchmark relacional em grafos.
 
-## Objetivo
+- **Framework (`src/media_gnn_study/`):** Contratos imutáveis, protocolo indutivo (zero vazamento validação→treino), álgebra de grafos em NumPy/SciPy, extração de representações, motor de avaliação e renderizador declarativo.
+- **Notebook (`notebooks/01_estudo_local.ipynb`):** Definição das arquiteturas de modelos (PyTorch, PyG, Scikit-Learn/XGBoost ou TensorFlow/Keras), hiperparâmetros de treino e registro no framework.
 
-Pergunta central: **relacionar obras em um grafo ajuda a classificá-las melhor do que analisar cada sinopse isoladamente?**
-
-Métricas primárias: micro-F1 e macro-F1. O conjunto de auditoria permanece reservado até o congelamento da metodologia.
-
-## Estrutura Modular
+## Estrutura do Repositório
 
 ```text
-src/media_gnn_study/
-├── core/
-│   ├── config.py       # protocolo, caminhos e hiperparâmetros
-│   ├── contracts.py    # DatasetContext / FeatureContext / GraphContext / ExperimentResult / StudyResult
-│   └── graph.py        # álgebra de grafos indutiva pura em NumPy/SciPy (kNN, poda top-k, incidência bipartida)
-├── data/
-│   ├── loader.py       # leitura do CSV, limpeza e validação criptográfica SHA-256
-│   └── splits.py       # folds agrupados por franquia sem vazamento
-├── features/
-│   ├── encoders.py     # MiniLM e XLM-RoBERTa emoção (com cache em disco)
-│   ├── linguistic.py   # spaCy NER, pares verbo-objeto e métricas sintáticas
-│   └── lexical.py      # TF-IDF, SVD, NMF e montagem fold-local do FeatureContext
-├── models/
-│   ├── base.py         # contrato ModelOutput e protocolo ModelAdapterFn
-│   ├── metrics.py      # métricas multirrótulo e por classe
-│   ├── registry.py     # catálogo plugável (register_model / run_model)
-│   └── backends/       # implementações de referência (Classical e PyTorch/PyG)
-├── engine/
-│   ├── plan.py         # catálogo de 55 bundles e experimentos focais
-│   ├── sanity.py       # verificações pré-execução do protocolo indutivo
-│   └── runner.py       # execução incremental agnóstica a framework
-├── evaluation/
-│   ├── diagnostics.py  # homofilia × ganho, learning curves e subgrafos qualitativos
-│   ├── study.py        # montagem do StudyResult e fronteira de Pareto
-│   ├── render.py       # renderizador declarativo de tabelas e figuras
-│   └── manifest.py     # manifesto JSON de reprodutibilidade
-└── pipeline.py         # orquestração de alto nível (run_study)
+├── notebooks/
+│   └── 01_estudo_local.ipynb   # Arquiteturas de modelos, registro e execução local
+├── src/media_gnn_study/
+│   ├── core/
+│   │   ├── config.py           # Protocolo experimental e caminhos (sem modelos acoplados)
+│   │   ├── contracts.py        # DatasetContext / FeatureContext / GraphContext / ExperimentResult / StudyResult
+│   │   └── graph.py            # Álgebra indutiva de grafos pura em NumPy/SciPy (kNN, poda top-k, incidência bipartida)
+│   ├── data/
+│   │   ├── loader.py           # Leitura do CSV, limpeza e validação criptográfica SHA-256
+│   │   └── splits.py           # Folds agrupados por franquia sem vazamento
+│   ├── features/
+│   │   ├── encoders.py         # MiniLM e XLM-RoBERTa emoção (com cache em disco)
+│   │   ├── linguistic.py       # spaCy NER, pares verbo-objeto e métricas sintáticas
+│   │   └── lexical.py          # TF-IDF, SVD, NMF e montagem fold-local do FeatureContext
+│   ├── models/
+│   │   ├── base.py             # Contratos ModelOutput, ModelSpec e protocolo ModelAdapterFn
+│   │   ├── metrics.py          # Métricas multirrótulo e por classe
+│   │   └── registry.py         # Registro agnóstico (register_model / register_special_experiment / run_model)
+│   ├── engine/
+│   │   ├── plan.py             # Catálogo de 55 bundles e montagem dinâmica do ExperimentPlan
+│   │   ├── sanity.py           # Verificações pré-execução do protocolo indutivo
+│   │   └── runner.py           # Execução incremental agnóstica a framework
+│   ├── evaluation/
+│   │   ├── diagnostics.py      # Homofilia × ganho, learning curves e subgrafos qualitativos
+│   │   ├── study.py            # Montagem do StudyResult e fronteira de Pareto
+│   │   ├── render.py           # Renderizador declarativo de tabelas e figuras
+│   │   └── manifest.py         # Manifesto JSON de reprodutibilidade
+│   └── pipeline.py             # Orquestração de alto nível (run_study)
+└── tests/                      # Testes unitários do protocolo e contratos
 ```
 
-## Injetando Modelos Customizados (TensorFlow / Keras / PyTorch) no Notebook
+## Registrando Modelos no Notebook (PyTorch / TensorFlow / Keras / Scikit-Learn)
 
 O motor experimental conversa com os modelos exclusivamente via arrays NumPy e o contrato `GraphContext`:
 
 ```python
-from media_gnn_study import register_model, ModelOutput, run_study
+from media_gnn_study import register_model, ModelOutput
 
-def meu_modelo_tensorflow(x_train, y_train, x_eval, graph_context, seed):
+def meu_modelo_adapter(x_train, y_train, x_eval, graph_context, seed):
     # graph_context entrega p_train, p_eval, edge_index_train, edge_index_eval em NumPy
-    # Treine seu modelo em TensorFlow/Keras, PyTorch ou JAX:
     ...
     return ModelOutput(
         probabilities=prob_eval,
@@ -60,9 +58,12 @@ def meu_modelo_tensorflow(x_train, y_train, x_eval, graph_context, seed):
     )
 
 register_model(
-    "tf_gnn",
-    meu_modelo_tensorflow,
-    metadata={"display_name": "TensorFlow GNN", "family": "graph", "role": "relational"},
+    "meu_gnn",
+    meu_modelo_adapter,
+    display_name="Meu GNN Customizado",
+    family="graph",
+    role="relational",
+    seeds=(42, 43, 44),
 )
 ```
 
