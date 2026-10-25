@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import sparse
-from media_gnn_study.models import prune_tfidf_topk, prepare_hetero_term_incidence
+from veritas_ml.models import prune_tfidf_topk, prepare_hetero_term_incidence
 
 def test_topk_pruning_is_row_bounded():
     x=sparse.csr_matrix(np.array([[1.,4.,2.,3.],[0.,1.,0.,2.]],dtype=float))

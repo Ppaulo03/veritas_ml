@@ -1,7 +1,7 @@
 """Tests for lexical feature extraction, SVD reduction, and block combination."""
 
 import numpy as np
-from media_gnn_study.features import (
+from veritas_ml.features import (
     WORD_CFGS,
     _fit_svd,
     _fit_tfidf_base,

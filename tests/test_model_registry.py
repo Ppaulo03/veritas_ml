@@ -1,8 +1,8 @@
 """Tests for the model-agnostic registry and GraphContext contract."""
 
 import numpy as np
-from media_gnn_study.core.contracts import GraphContext
-from media_gnn_study.models import (
+from veritas_ml.core.contracts import GraphContext
+from veritas_ml.models import (
     ModelOutput,
     clear_registry,
     get_model_spec,

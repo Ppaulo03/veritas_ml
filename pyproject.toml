@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "media-gnn-study"
+name = "veritas-ml"
 version = "0.1.0"
-description = "Experimental framework for multilabel media classification with text representations and graphs"
+description = "Veritas ML: Auditable, model-agnostic experimental framework for representation and relational benchmarks"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26",
@@ -29,4 +29,5 @@ full = [
 where = ["src"]
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
 testpaths = ["tests"]

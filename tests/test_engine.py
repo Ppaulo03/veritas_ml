@@ -2,13 +2,13 @@
 
 import numpy as np
 import pandas as pd
-from media_gnn_study.engine import (
+from veritas_ml.engine import (
     BUNDLE_REGISTRY,
     build_experiment_plan,
     plan_summary,
     standardize_experiment_result,
 )
-from media_gnn_study.models import clear_registry, register_model
+from veritas_ml.models import clear_registry, register_model
 
 
 def _register_test_models():

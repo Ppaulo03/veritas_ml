@@ -1,8 +1,8 @@
 """Tests for data loading utilities and franchise-grouped fold splits."""
 
 from pathlib import Path
-from media_gnn_study.core.config import DATA_SHA
-from media_gnn_study.data import (
+from veritas_ml.core.config import DATA_SHA
+from veritas_ml.data import (
     build_dataset_context,
     clean_text,
     make_grouped_folds,

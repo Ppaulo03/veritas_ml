@@ -1,8 +1,8 @@
 """Tests for core contracts and pure numpy graph routines."""
 
 import numpy as np
-from media_gnn_study.core.contracts import stable_id
-from media_gnn_study.core.graph import build_knn_edge_arrays, safe_unit_rows
+from veritas_ml.core.contracts import stable_id
+from veritas_ml.core.graph import build_knn_edge_arrays, safe_unit_rows
 
 
 def test_stable_id_deterministic():

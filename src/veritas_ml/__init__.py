@@ -1,4 +1,4 @@
-"""Media GNN Study: Framework-agnostic multilabel media classification and graph benchmark."""
+"""Veritas ML: Auditable, model-agnostic experimental framework for representations and relational learning."""
 
 from .core import (
     DatasetContext,

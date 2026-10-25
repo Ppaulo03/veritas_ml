@@ -2,9 +2,9 @@
 
 import numpy as np
 import pandas as pd
-from media_gnn_study.core.contracts import DatasetContext
-from media_gnn_study.engine import build_experiment_plan, standardize_experiment_result
-from media_gnn_study.evaluation import (
+from veritas_ml.core.contracts import DatasetContext
+from veritas_ml.engine import build_experiment_plan, standardize_experiment_result
+from veritas_ml.evaluation import (
     assemble_study_result,
     build_dataset_profile,
     pareto_front,

@@ -1,5 +1,5 @@
 import numpy as np
-from media_gnn_study.models import build_knn_propagation, build_knn_edge_index
+from veritas_ml.models import build_knn_propagation, build_knn_edge_index
 
 def test_fixed_knn_rows_sum_to_one_and_no_validation_to_train():
     tr=np.array([[1.,0.],[0.9,0.1],[0.,1.]],dtype=np.float32)
