@@ -57,8 +57,17 @@ def fit_predict_neural(
     yt = torch.tensor(y_train, dtype=torch.float32, device=device)
     xe = torch.tensor(np.concatenate([x_train, x_eval]), dtype=torch.float32, device=device)
 
-    pt = torch.as_tensor(p_train, dtype=torch.float32, device=device) if p_train is not None else None
-    pe = torch.as_tensor(p_eval, dtype=torch.float32, device=device) if p_eval is not None else None
+    if p_train is not None:
+        pt_raw = torch.as_tensor(p_train, dtype=torch.float32, device=device)
+        pt = pt_raw if pt_raw.is_sparse else pt_raw.to_sparse().coalesce()
+    else:
+        pt = None
+
+    if p_eval is not None:
+        pe_raw = torch.as_tensor(p_eval, dtype=torch.float32, device=device)
+        pe = pe_raw if pe_raw.is_sparse else pe_raw.to_sparse().coalesce()
+    else:
+        pe = None
 
     if model == "linear":
         net = LinearClassifier(xt.shape[1], yt.shape[1]).to(device)
