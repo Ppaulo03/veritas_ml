@@ -1,4 +1,4 @@
-"""Experimental bundle catalog, focal relational conditions, and ExperimentPlan assembly."""
+"""Experimental bundle catalog and model-agnostic ExperimentPlan assembly."""
 
 from __future__ import annotations
 
@@ -10,13 +10,7 @@ import pandas as pd
 from ..core.config import (
     CLASS_METRICS,
     GRAPH_CFG,
-    HETERO_DIFFUSION_CFG,
-    HETERO_TERM_CFG,
     METRIC_LABELS,
-    MODEL_ENABLED,
-    MODEL_METADATA,
-    MODEL_SEEDS,
-    MAIN_MODEL_ORDER,
     PRIMARY_METRICS,
     REFERENCE_POLICY,
     RELATIONAL_DIAGNOSTICS,
@@ -26,6 +20,12 @@ from ..core.config import (
 )
 from ..core.contracts import DatasetContext, ExperimentPlan
 from ..features import SOURCE_ORDER
+from ..models.registry import (
+    get_model_metadata,
+    get_model_seeds,
+    get_special_experiments,
+    list_models,
+)
 
 
 def _dedupe_registry(rows: list[tuple[str, tuple[str, ...]]]) -> list[dict[str, Any]]:
@@ -83,101 +83,43 @@ for _row in BUNDLE_REGISTRY:
 
 BUNDLE_TABLE = pd.DataFrame([{**r, "bundle": "|".join(r["bundle"])} for r in BUNDLE_REGISTRY])
 
-SPECIAL_EXPERIMENTS: tuple[dict[str, Any], ...] = (
-    # 1) Homogeneous operators: same features, same inductive kNN topology, different operators
-    {
-        "id": "homogeneous_gcn_minilm_word1_v1",
-        "adapter": "homogeneous_operator",
-        "family": "homogeneous_operator",
-        "features": "minilm+word_1",
-        "bundle": ("minilm", "word_1"),
-        "model_id": "gcn",
-        "fontes": "minilm|word_1",
-        "n_fontes": 2,
-        "enabled": True,
-        "description": "GCNConv no mesmo kNN indutivo usado pelo baseline Fixed-kNN GNN",
-    },
-    {
-        "id": "homogeneous_graphsage_minilm_word1_v1",
-        "adapter": "homogeneous_operator",
-        "family": "homogeneous_operator",
-        "features": "minilm+word_1",
-        "bundle": ("minilm", "word_1"),
-        "model_id": "graphsage",
-        "fontes": "minilm|word_1",
-        "n_fontes": 2,
-        "enabled": True,
-        "description": "SAGEConv(mean) no mesmo kNN indutivo usado pelo baseline Fixed-kNN GNN",
-    },
-    {
-        "id": "homogeneous_gatv2_minilm_word1_v1",
-        "adapter": "homogeneous_operator",
-        "family": "homogeneous_operator",
-        "features": "minilm+word_1",
-        "bundle": ("minilm", "word_1"),
-        "model_id": "gatv2",
-        "fontes": "minilm|word_1",
-        "n_fontes": 2,
-        "enabled": True,
-        "description": "GATv2Conv no mesmo kNN indutivo; atenção aprende quanto confiar em cada vizinho",
-    },
-    # 2) Heterogeneous bipartite work↔term models & top-k pruning ablations
-    {
-        "id": "hetero_term_gnn_v1",
-        "adapter": "hetero_term",
-        "family": "heterogeneous",
-        "features": HETERO_TERM_CFG["representation_name"],
-        "model_id": "hetero_term_gnn",
-        "fontes": "minilm|word_1_terms",
-        "n_fontes": 2,
-        "top_k_terms": None,
-        "enabled": True,
-        "description": "Baseline atual: MiniLM nas obras + todos os nós termo, incidência TF-IDF train-only",
-    },
-    *tuple(
-        {
-            "id": f"hetero_term_gnn_top{k}_v1",
-            "adapter": "hetero_term",
-            "family": "heterogeneous_diffusion",
-            "features": f"{HETERO_TERM_CFG['representation_name']}_top{k}",
-            "model_id": "hetero_term_gnn",
-            "fontes": "minilm|word_1_terms",
-            "n_fontes": 2,
-            "top_k_terms": k,
-            "enabled": True,
-            "description": f"Mesma hetero, mantendo apenas os top-{k} termos TF-IDF por obra",
-        }
-        for k in HETERO_DIFFUSION_CFG["top_k_values"]
-    ),
-    {
-        "id": "hetero_term_gatv2_v1",
-        "adapter": "hetero_term",
-        "family": "heterogeneous_attention",
-        "features": HETERO_TERM_CFG["representation_name"],
-        "model_id": "hetero_term_gatv2",
-        "fontes": "minilm|word_1_terms",
-        "n_fontes": 2,
-        "top_k_terms": None,
-        "enabled": True,
-        "description": "Estados dos termos train-only; GATv2 aprende a agregação termo→obra usando TF-IDF como atributo de aresta",
-    },
-)
-
 
 def build_experiment_plan(
     dataset: DatasetContext | None = None,
+    *,
     persist_registry: bool = True,
+    registry: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+    model_ids: tuple[str, ...] | list[str] | None = None,
+    special_experiments: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
 ) -> ExperimentPlan:
-    """Assemble ExperimentPlan reflecting currently enabled main and focal models."""
-    active_main_models = tuple(
-        m for m in list(MAIN_MODEL_ORDER) + [k for k in MODEL_METADATA if k not in MAIN_MODEL_ORDER]
-        if MODEL_ENABLED.get(m, False) and MODEL_METADATA.get(m, {}).get("execution_scope") == "main_matrix"
+    """Assemble ExperimentPlan dynamically from the notebook-populated model registry."""
+    meta = get_model_metadata()
+    seeds = get_model_seeds()
+
+    if model_ids is not None:
+        active_main_models = tuple(str(m) for m in model_ids)
+    else:
+        active_main_models = tuple(
+            list_models(enabled_only=True, execution_scope="main_matrix")
+        )
+
+    raw_specials = (
+        list(special_experiments)
+        if special_experiments is not None
+        else get_special_experiments()
     )
+    active_specials = tuple(
+        x for x in raw_specials
+        if x.get("enabled", True) and x.get("model_id") in meta
+    )
+
+    active_registry = tuple(registry) if registry is not None else tuple(BUNDLE_REGISTRY)
+
     plan = ExperimentPlan(
-        registry=tuple(BUNDLE_REGISTRY),
+        registry=active_registry,
         model_ids=active_main_models,
-        model_seeds={k: tuple(v) for k, v in MODEL_SEEDS.items()},
-        model_metadata=MODEL_METADATA,
+        model_seeds=seeds,
+        model_metadata=meta,
         primary_metrics=PRIMARY_METRICS,
         reported_metrics=REPORTED_METRICS,
         class_metrics=CLASS_METRICS,
@@ -185,8 +127,8 @@ def build_experiment_plan(
         reference_policy=REFERENCE_POLICY,
         graph_config=GRAPH_CFG,
         diagnostics=RELATIONAL_DIAGNOSTICS,
-        special_experiments=tuple(x for x in SPECIAL_EXPERIMENTS if x.get("enabled", True)),
-        registered_models=tuple(MODEL_METADATA),
+        special_experiments=active_specials,
+        registered_models=tuple(meta.keys()),
     )
     if persist_registry:
         ensure_runtime_dirs()
@@ -206,7 +148,13 @@ def plan_summary(plan: ExperimentPlan, dataset: DatasetContext | None = None) ->
         "conditions": main_conditions + special_conditions,
     }
     if dataset is not None:
-        main_fits = sum(len(dataset.folds) * len(plan.model_seeds[m]) for m in plan.model_ids) * len(plan.registry)
-        special_fits = sum(len(dataset.folds) * len(plan.model_seeds[e["model_id"]]) for e in plan.special_experiments)
+        main_fits = (
+            sum(len(dataset.folds) * len(plan.model_seeds[m]) for m in plan.model_ids)
+            * len(plan.registry)
+        )
+        special_fits = sum(
+            len(dataset.folds) * len(plan.model_seeds[e["model_id"]])
+            for e in plan.special_experiments
+        )
         summary["fits"] = main_fits + special_fits
     return summary

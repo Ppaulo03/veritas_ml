@@ -50,11 +50,19 @@ def run_relational_diagnostics(
     outputs: dict[str, pd.DataFrame] = {}
 
     for spec in plan.diagnostics:
-        rel_model = spec["relational_model"]
-        base_model = spec["baseline_model"]
+        rel_model = spec.get("relational_model")
+        base_model = spec.get("baseline_model")
+        if not rel_model:
+            rel_role = spec.get("relational_role", "relational")
+            rel_candidates = conditions[conditions.model_role == rel_role].model_id.unique()
+            rel_model = str(rel_candidates[0]) if len(rel_candidates) else None
+        if not base_model:
+            base_role = spec.get("baseline_role", "individual_baseline")
+            base_candidates = conditions[conditions.model_role == base_role].model_id.unique()
+            base_model = str(base_candidates[0]) if len(base_candidates) else None
         metric = spec["metric"]
         available = set(conditions.model_id)
-        if rel_model not in available or base_model not in available:
+        if not rel_model or not base_model or rel_model not in available or base_model not in available:
             continue
 
         edge_rows = []
@@ -117,7 +125,7 @@ LEARNING_CURVE_CONFIG: dict[str, Any] = {
     "version": "learning_curve_nested_group_balanced_v1",
     "representation_name": "minilm+word_1",
     "bundle": ("minilm", "word_1"),
-    "models": ("mlp", "gnn"),
+    "roles": ("individual_baseline", "relational"),
     "fractions": (0.20, 0.40, 0.60, 0.80, 1.00),
     "subset_seed": CV_SEED + 1000,
     "subset_policy": "nested_group_greedy_multilabel_balance_train_only",
@@ -261,7 +269,14 @@ def run_learning_curve_diagnostic(
     spec: dict[str, Any] = LEARNING_CURVE_CONFIG,
 ) -> dict[str, pd.DataFrame]:
     """Evaluate sample-efficiency curves across nested group-balanced training fractions."""
-    models = tuple(m for m in spec["models"] if m in plan.model_ids)
+    if "models" in spec:
+        models = tuple(m for m in spec["models"] if m in plan.model_ids)
+    else:
+        wanted_roles = set(spec.get("roles", ("individual_baseline", "relational")))
+        models = tuple(
+            m for m in plan.model_ids
+            if plan.model_metadata.get(m, {}).get("role") in wanted_roles
+        )
     if not models:
         return {}
 

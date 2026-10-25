@@ -59,14 +59,21 @@ def build_dataset_context(
     data_path: str | Path | None = None,
     split_path: str | Path | None = None,
     persist_folds: bool = True,
+    *,
+    allow_local_fallback: bool = False,
 ) -> DatasetContext:
     """Assemble DatasetContext from frozen files and optionally persist fold assignments."""
     ensure_runtime_dirs()
     resolved_data = Path(data_path or DATA)
     resolved_split = Path(split_path or PARTS)
 
-    dev, y, partitions = load_development(resolved_data, resolved_split)
+    dev, y, partitions = load_development(
+        resolved_data,
+        resolved_split,
+        allow_local_fallback=allow_local_fallback,
+    )
     folds, fold_id = make_grouped_folds(dev.grupo_franquia)
+    is_official_split = resolved_split.is_file()
 
     dataset = DatasetContext(
         frame=dev,
@@ -77,7 +84,7 @@ def build_dataset_context(
         partitions=partitions,
         metadata={
             "data_sha256": DATA_SHA,
-            "split_sha256": SPLIT_SHA,
+            "split_sha256": SPLIT_SHA if is_official_split else "LOCAL_FALLBACK_SPLIT",
             "n_development": int(len(dev)),
             "n_audit_reserved": int((partitions.particao == "auditoria").sum()),
             "target_column": TARGET,

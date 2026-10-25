@@ -14,19 +14,14 @@ from ..core.config import (
     CENTRAL,
     CV_SEED,
     DATA_SHA,
-    DROPOUT,
-    EPOCHS,
     EXPERIMENT_SCHEMA_VERSION,
     FIXED_THRESHOLD,
-    HIDDEN,
     INCREMENTAL_BASE_RUN_ID,
     INCREMENTAL_REUSE,
     INCREMENTAL_REUSE_STRICT,
-    LR,
     SPLIT_SHA,
     STUDY_DIR,
     STUDY_VERSION,
-    WEIGHT_DECAY,
 )
 from ..core.contracts import (
     DatasetContext,
@@ -182,15 +177,13 @@ def persist_experiment_result(result: ExperimentResult, directory: str | Path) -
     result.timing_observations.to_csv(out_dir / "timing_observations.csv", index=False)
 
 
-def _current_training_signature() -> dict[str, Any]:
+def _current_training_signature(plan: ExperimentPlan) -> dict[str, Any]:
     return {
-        "epochs": EPOCHS,
-        "hidden": HIDDEN,
-        "dropout": DROPOUT,
-        "lr": LR,
-        "weight_decay": WEIGHT_DECAY,
         "threshold": FIXED_THRESHOLD,
-        "loss": "BCEWithLogitsLoss_pos_weight_train_only",
+        "models": {
+            m: meta.get("training_config", {})
+            for m, meta in plan.model_metadata.items()
+        },
     }
 
 
@@ -234,7 +227,7 @@ def load_incremental_base(
             "audit_unused": manifest.get("audit_used") is False,
             "cv_splits": manifest.get("cv", {}).get("outer_splits") == len(dataset.folds),
             "fold_seed": manifest.get("cv", {}).get("fold_seed") == CV_SEED,
-            "training": manifest.get("training") == _current_training_signature(),
+            "training": manifest.get("training") == _current_training_signature(plan),
             "graph": manifest.get("graph") == plan.graph_config,
         }
         print(

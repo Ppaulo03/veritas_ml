@@ -7,24 +7,18 @@ from typing import Any
 
 from ..core.config import (
     CV_SEED,
-    DROPOUT,
-    EPOCHS,
+    DEVICE_NAME,
     FIXED_THRESHOLD,
     HETERO_DIFFUSION_CFG,
     HETERO_TERM_CFG,
-    HIDDEN,
     HOMOGENEOUS_OPERATOR_CFG,
     INCREMENTAL_BASE_RUN_ID,
     INCREMENTAL_REUSE,
-    LR,
-    MODEL_METADATA,
-    RELATIONAL_RESEARCH_REGISTRY,
     RUN_DIR,
     RUN_ID,
     RUNTIME_INFO,
     STUDY_DIR,
     STUDY_VERSION,
-    WEIGHT_DECAY,
     ensure_runtime_dirs,
 )
 from ..core.contracts import (
@@ -65,26 +59,28 @@ def write_manifest(
             "fold_seed": CV_SEED,
             "model_seeds": {m: list(s) for m, s in plan.model_seeds.items()},
         },
-        "device": "cpu",
+        "device": DEVICE_NAME,
         "runtime": RUNTIME_INFO,
         "training": {
-            "epochs": EPOCHS,
-            "hidden": HIDDEN,
-            "dropout": DROPOUT,
-            "lr": LR,
-            "weight_decay": WEIGHT_DECAY,
             "threshold": FIXED_THRESHOLD,
-            "loss": "BCEWithLogitsLoss_pos_weight_train_only",
+            "models": {
+                m: meta.get("training_config", {})
+                for m, meta in plan.model_metadata.items()
+            },
         },
         "graph": plan.graph_config,
         "models": plan.model_metadata,
-        "model_execution_enabled": {m: bool(v.get("enabled", True)) for m, v in MODEL_METADATA.items()},
+        "model_execution_enabled": {
+            m: bool(v.get("enabled", True)) for m, v in plan.model_metadata.items()
+        },
         "special_experiments": [dict(x) for x in plan.special_experiments],
         "homogeneous_operator_config": HOMOGENEOUS_OPERATOR_CFG,
         "hetero_term_config": HETERO_TERM_CFG,
         "hetero_diffusion_config": HETERO_DIFFUSION_CFG,
-        "incremental_reuse": {"enabled": INCREMENTAL_REUSE, "base_run_id": INCREMENTAL_BASE_RUN_ID},
-        "relational_research_registry": RELATIONAL_RESEARCH_REGISTRY,
+        "incremental_reuse": {
+            "enabled": INCREMENTAL_REUSE,
+            "base_run_id": INCREMENTAL_BASE_RUN_ID,
+        },
         "feature_extractors": feature_context.fixed_meta,
         "n_bundles": len(plan.registry),
         "n_conditions": len(experiment_result.conditions),
@@ -105,5 +101,8 @@ def write_manifest(
     ensure_runtime_dirs()
     for p in (STUDY_DIR / "manifesto.json", RUN_DIR / "manifesto.json"):
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(manifest, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        p.write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
     return manifest

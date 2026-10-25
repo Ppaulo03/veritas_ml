@@ -17,11 +17,17 @@ from .evaluation import (
 from .features import prepare_feature_context
 
 
-def run_study(render: bool = True) -> dict[str, Any]:
+def run_study(
+    *,
+    render: bool = True,
+    allow_local_fallback: bool = False,
+    registry: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+    run_full_diagnostics: bool = True,
+) -> dict[str, Any]:
     """Execute the complete media GNN study pipeline from dataset loading to report generation."""
     ensure_runtime_dirs()
-    dataset = build_dataset_context()
-    plan = build_experiment_plan(dataset)
+    dataset = build_dataset_context(allow_local_fallback=allow_local_fallback)
+    plan = build_experiment_plan(dataset, registry=registry)
     print(
         "Dataset:",
         len(dataset.frame),
@@ -40,7 +46,11 @@ def run_study(render: bool = True) -> dict[str, Any]:
     experiment_result = execute_experiments(dataset, feature_context, plan)
 
     print("4/5 — diagnósticos e StudyResult")
-    diagnostics = run_diagnostics(dataset, feature_context, experiment_result, plan)
+    diagnostics = (
+        run_diagnostics(dataset, feature_context, experiment_result, plan)
+        if run_full_diagnostics
+        else {}
+    )
     study_result = assemble_study_result(dataset, experiment_result, diagnostics)
 
     report_dir = STUDY_DIR / "report"

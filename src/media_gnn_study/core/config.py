@@ -1,9 +1,9 @@
-"""Experimental study protocol, model metadata, and environment paths.
+"""Experimental study protocol, graph topology rules, and environment paths.
 
-Central configuration for:
-- Cross-validation protocol and random seeds
-- Enabled models, metrics, and reference policies
-- Graph topology and inductive operator settings
+Completely model-agnostic and framework-agnostic configuration:
+- Cross-validation protocol and default seeds
+- Evaluation metrics and reference selection policies
+- Inductive graph construction parameters
 - Dataset paths, cache directories, and SHA-256 integrity fingerprints
 """
 
@@ -22,110 +22,7 @@ from uuid import uuid4
 STUDY_VERSION = "unified_representation_graph_study_v5"
 CV_SPLITS = 5
 CV_SEED = 42
-NEURAL_SEEDS = (42, 43, 44)
-CLASSICAL_SEEDS = (42,)
-
-MODEL_SEEDS: dict[str, tuple[int, ...]] = {
-    "linear": NEURAL_SEEDS,
-    "mlp": NEURAL_SEEDS,
-    "rf": CLASSICAL_SEEDS,
-    "xgb": CLASSICAL_SEEDS,
-    "gnn": NEURAL_SEEDS,
-    "gcn": NEURAL_SEEDS,
-    "graphsage": NEURAL_SEEDS,
-    "gatv2": NEURAL_SEEDS,
-    "hetero_term_gnn": NEURAL_SEEDS,
-    "hetero_term_gatv2": NEURAL_SEEDS,
-}
-
-MODEL_ENABLED: dict[str, bool] = {
-    "linear": True,
-    "mlp": True,
-    "rf": False,
-    "xgb": False,
-    "gnn": True,
-    "gcn": True,              # Focal experiment on MiniLM+word_1
-    "graphsage": True,        # Focal experiment on MiniLM+word_1
-    "gatv2": True,            # Focal experiment on MiniLM+word_1
-    "hetero_term_gnn": True,  # Structural bipartite experiment
-    "hetero_term_gatv2": True,
-}
-
-MAIN_MODEL_ORDER = ("linear", "mlp", "rf", "xgb", "gnn")
-MODELS = tuple(m for m in MAIN_MODEL_ORDER if MODEL_ENABLED.get(m, False))
-
-MODEL_METADATA: dict[str, dict[str, Any]] = {
-    "linear": {
-        "display_name": "Linear",
-        "family": "linear",
-        "role": "individual",
-        "enabled": True,
-        "execution_scope": "main_matrix",
-    },
-    "mlp": {
-        "display_name": "MLP",
-        "family": "neural",
-        "role": "individual_baseline",
-        "enabled": True,
-        "execution_scope": "main_matrix",
-    },
-    "rf": {
-        "display_name": "Random Forest",
-        "family": "tree",
-        "role": "individual",
-        "enabled": False,
-        "execution_scope": "main_matrix",
-    },
-    "xgb": {
-        "display_name": "XGBoost",
-        "family": "boosting",
-        "role": "individual",
-        "enabled": False,
-        "execution_scope": "main_matrix",
-    },
-    "gnn": {
-        "display_name": "Fixed-kNN GNN",
-        "family": "graph",
-        "role": "relational",
-        "enabled": True,
-        "execution_scope": "main_matrix",
-    },
-    "gcn": {
-        "display_name": "GCN",
-        "family": "graph",
-        "role": "relational_operator",
-        "enabled": True,
-        "execution_scope": "special_experiment",
-    },
-    "graphsage": {
-        "display_name": "GraphSAGE",
-        "family": "graph",
-        "role": "relational_operator",
-        "enabled": True,
-        "execution_scope": "special_experiment",
-    },
-    "gatv2": {
-        "display_name": "GATv2",
-        "family": "graph_attention",
-        "role": "relational_operator",
-        "enabled": True,
-        "execution_scope": "special_experiment",
-    },
-    "hetero_term_gnn": {
-        "display_name": "Hetero GNN (obra↔termo)",
-        "family": "heterogeneous_graph",
-        "role": "relational_structural",
-        "enabled": True,
-        "execution_scope": "special_experiment",
-    },
-    "hetero_term_gatv2": {
-        "display_name": "Hetero GATv2 (termo→obra)",
-        "family": "heterogeneous_graph_attention",
-        "role": "relational_structural",
-        "enabled": True,
-        "execution_scope": "special_experiment",
-    },
-}
+DEFAULT_MODEL_SEEDS: tuple[int, ...] = (42, 43, 44)
 
 PRIMARY_METRICS = ("f1_micro", "f1_macro")
 REPORTED_METRICS = ("f1_micro", "f1_macro", "precision_micro", "recall_micro")
@@ -151,8 +48,8 @@ REFERENCE_POLICY: dict[str, Any] = {
 RELATIONAL_DIAGNOSTICS: tuple[dict[str, Any], ...] = (
     {
         "id": "relational_vs_individual",
-        "relational_model": "gnn",
-        "baseline_model": "mlp",
+        "relational_role": "relational",
+        "baseline_role": "individual_baseline",
         "metric": "f1_macro",
         "neighbor_quality_metric": "mean_jaccard",
         "display_name": "Homofilia × ganho relacional",
@@ -161,20 +58,14 @@ RELATIONAL_DIAGNOSTICS: tuple[dict[str, Any], ...] = (
 
 RESULT_SCHEMA_VERSION = "study_result_v1"
 EXPERIMENT_SCHEMA_VERSION = "experiment_result_v1"
-
-# Hyperparameters
-EPOCHS = 200
-HIDDEN = 64
-DROPOUT = 0.2
-LR = 1e-3
-WEIGHT_DECAY = 1e-4
 FIXED_THRESHOLD = 0.5
+
+# ---------------- Graph Topology Rules ----------------
 GRAPH_CFG: dict[str, Any] = {"k": 5, "self_weight": 0.90, "min_similarity": None}
 
 HOMOGENEOUS_OPERATOR_CFG: dict[str, Any] = {
     "representation_name": "minilm+word_1",
     "bundle": ("minilm", "word_1"),
-    "models": ("gcn", "graphsage", "gatv2"),
     "k": GRAPH_CFG["k"],
     "inductive_policy": (
         "validation nodes receive messages only from training nodes; "
@@ -194,74 +85,15 @@ HETERO_TERM_CFG: dict[str, Any] = {
     "work_source": "minilm",
     "term_source": "word_1",
     "term_weight": "tfidf_train_only",
-    "hidden": HIDDEN,
-    "dropout": DROPOUT,
     "inductive_policy": (
         "term states are built from training works only; "
         "validation works never update shared term nodes"
     ),
 }
 
-RELATIONAL_RESEARCH_REGISTRY: dict[str, dict[str, str]] = {
-    "fixed_knn_gnn": {
-        "status": "active_baseline",
-        "question": "A propagação kNN fixa melhora sobre o baseline individual?",
-        "structure": "directed train-only kNN; fixed 0.9 self + 0.1 uniform neighbor mean",
-    },
-    "gcn_knn": {
-        "status": "active_focal",
-        "question": "A normalização convolucional de GCN melhora sobre a propagação fixa no mesmo kNN?",
-        "structure": "same directed inductive kNN edges; PyG GCNConv",
-    },
-    "graphsage_knn": {
-        "status": "active_focal",
-        "question": "Separar self e média dos vizinhos via GraphSAGE melhora no mesmo kNN?",
-        "structure": "same directed inductive kNN edges; PyG SAGEConv",
-    },
-    "gatv2_knn": {
-        "status": "active_focal",
-        "question": "Aprender quanto confiar em cada vizinho melhora no mesmo kNN?",
-        "structure": "same directed inductive kNN edges; PyG GATv2Conv",
-    },
-    "hetero_term_gnn": {
-        "status": "active_baseline",
-        "question": "Representar termos como nós explícitos melhora em relação a concatenar o sinal lexical?",
-        "structure": "work nodes + term nodes; weighted TF-IDF incidence; MiniLM on work nodes",
-    },
-    "hetero_term_topk": {
-        "status": "active_focal",
-        "question": "Reduzir o número de termos por obra melhora a heterogênea?",
-        "structure": "same heterogeneous model with per-work TF-IDF top-k pruning",
-    },
-    "hetero_term_gatv2": {
-        "status": "active_focal",
-        "question": "Atenção aprendida termo→obra consegue suprimir relações lexicais pouco úteis?",
-        "structure": "term states built from training works only; GATv2 attention on term→work aggregation",
-    },
-    "hypergraph_terms": {
-        "status": "planned_disabled",
-        "question": "Relações de alta ordem termo→múltiplas obras são melhores que arestas obra↔obra?",
-        "structure": "works as vertices; shared terms/topics as hyperedges",
-    },
-    "hypergraph_attention": {
-        "status": "planned_disabled",
-        "question": "Atenção dentro de hiperarestas melhora a seleção de sinal compartilhado?",
-        "structure": "hypergraph convolution with attention; only after the non-attentive hypergraph baseline",
-    },
-}
-
-# ---------------- Environment and Device ----------------
+# ---------------- Environment and Dataset Constants ----------------
 CPU_THREADS = max(1, min(4, os.cpu_count() or 1))
-
-# Framework-agnostic default device string
 DEVICE_NAME = os.environ.get("GNN_DEVICE", "cpu")
-
-try:
-    import torch
-    DEVICE = torch.device(DEVICE_NAME)
-    torch.set_num_threads(CPU_THREADS)
-except ImportError:
-    DEVICE = DEVICE_NAME
 
 TARGET = "Macrogênero (Gênero unificado)"
 CLASSES = [
@@ -309,7 +141,7 @@ def ensure_runtime_dirs() -> Path:
 
 
 def collect_runtime_info() -> dict[str, Any]:
-    """Capture execution platform, hardware threads, and framework environment."""
+    """Capture execution platform and hardware environment."""
     ram_gb = None
     try:
         with open("/proc/meminfo", "r", encoding="utf-8") as f:
@@ -319,15 +151,6 @@ def collect_runtime_info() -> dict[str, Any]:
     except Exception:
         pass
 
-    torch_ver = None
-    cuda_available = False
-    try:
-        import torch
-        torch_ver = torch.__version__
-        cuda_available = bool(torch.cuda.is_available())
-    except ImportError:
-        pass
-
     return {
         "python": sys.version.split()[0],
         "platform": platform.platform(),
@@ -335,9 +158,8 @@ def collect_runtime_info() -> dict[str, Any]:
         "cpu_count_logical": os.cpu_count(),
         "cpu_threads_used": CPU_THREADS,
         "ram_gb": ram_gb,
-        "torch": torch_ver,
-        "cuda_available_but_not_used": cuda_available,
         "device_for_study": DEVICE_NAME,
     }
+
 
 RUNTIME_INFO = collect_runtime_info()

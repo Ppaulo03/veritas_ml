@@ -1,4 +1,4 @@
-"""Pluggable model registry supporting notebook-defined and built-in adapters."""
+"""Model-agnostic registry for notebook-defined classifiers and special experiments."""
 
 from __future__ import annotations
 
@@ -6,52 +6,139 @@ from typing import Any
 
 import numpy as np
 
-from ..core.config import MODEL_ENABLED, MODEL_METADATA, MODEL_SEEDS, NEURAL_SEEDS
+from ..core.config import DEFAULT_MODEL_SEEDS
 from ..core.contracts import GraphContext
-from .base import ModelAdapterFn, ModelOutput
+from .base import ModelAdapterFn, ModelOutput, ModelSpec
 
-_MODEL_REGISTRY: dict[str, ModelAdapterFn] = {}
+_MODEL_SPECS: dict[str, ModelSpec] = {}
+_SPECIAL_EXPERIMENTS: list[dict[str, Any]] = []
 
 
 def register_model(
     model_id: str,
     adapter_fn: ModelAdapterFn,
-    metadata: dict[str, Any] | None = None,
-    seeds: tuple[int, ...] = NEURAL_SEEDS,
+    *,
+    display_name: str | None = None,
+    family: str = "custom",
+    role: str = "individual",
+    seeds: tuple[int, ...] = DEFAULT_MODEL_SEEDS,
     enabled: bool = True,
-) -> None:
+    execution_scope: str = "main_matrix",
+    metadata: dict[str, Any] | None = None,
+    training_config: dict[str, Any] | None = None,
+) -> ModelSpec:
     """Register or override a model adapter in the experimental framework.
 
-    Can be called from a notebook to inject TensorFlow, Keras, JAX, or custom PyTorch models.
+    Designed to be called from notebooks to inject PyTorch, TensorFlow/Keras,
+    JAX, or scikit-learn/XGBoost models without modifying the core framework.
     """
-    _MODEL_REGISTRY[model_id] = adapter_fn
-    MODEL_ENABLED[model_id] = enabled
-    if model_id not in MODEL_SEEDS:
-        MODEL_SEEDS[model_id] = seeds
-    if metadata is not None:
-        base_meta = {
-            "display_name": model_id,
-            "family": "custom",
-            "role": "custom",
-            "enabled": enabled,
-            "execution_scope": "main_matrix",
-        }
-        base_meta.update(metadata)
-        MODEL_METADATA[model_id] = base_meta
+    meta = dict(metadata or {})
+    resolved_display = str(meta.get("display_name", display_name or model_id))
+    resolved_family = str(meta.get("family", family))
+    resolved_role = str(meta.get("role", role))
+    resolved_enabled = bool(meta.get("enabled", enabled))
+    resolved_scope = str(meta.get("execution_scope", execution_scope))
+    resolved_train_cfg = dict(training_config or meta.get("training_config") or {})
+
+    spec = ModelSpec(
+        model_id=model_id,
+        adapter_fn=adapter_fn,
+        display_name=resolved_display,
+        family=resolved_family,
+        role=resolved_role,
+        seeds=tuple(int(s) for s in seeds),
+        enabled=resolved_enabled,
+        execution_scope=resolved_scope,
+        training_config=resolved_train_cfg,
+    )
+    _MODEL_SPECS[model_id] = spec
+    return spec
+
+
+def register_special_experiment(spec: dict[str, Any]) -> None:
+    """Register a special experiment specification (e.g., operator comparison or hetero graph).
+
+    Replaces any existing specification with the same ``experiment_id``.
+    """
+    exp_id = str(spec.get("experiment_id", f"special_{len(_SPECIAL_EXPERIMENTS)}"))
+    normalized = dict(spec)
+    normalized["experiment_id"] = exp_id
+    for idx, existing in enumerate(_SPECIAL_EXPERIMENTS):
+        if existing.get("experiment_id") == exp_id:
+            _SPECIAL_EXPERIMENTS[idx] = normalized
+            return
+    _SPECIAL_EXPERIMENTS.append(normalized)
+
+
+def clear_registry() -> None:
+    """Remove all registered models and special experiments."""
+    _MODEL_SPECS.clear()
+    _SPECIAL_EXPERIMENTS.clear()
 
 
 def get_model(model_id: str) -> ModelAdapterFn:
-    """Retrieve a registered model adapter by its identifier."""
-    if model_id not in _MODEL_REGISTRY:
+    """Retrieve a registered model adapter function by its identifier."""
+    if model_id not in _MODEL_SPECS:
         raise KeyError(
-            f"Model '{model_id}' is not registered. Available models: {sorted(_MODEL_REGISTRY.keys())}"
+            f"Model '{model_id}' is not registered. "
+            f"Available models: {list(_MODEL_SPECS.keys())}"
         )
-    return _MODEL_REGISTRY[model_id]
+    return _MODEL_SPECS[model_id].adapter_fn
 
 
-def list_models() -> list[str]:
-    """List all currently registered model identifiers."""
-    return sorted(_MODEL_REGISTRY.keys())
+def get_model_spec(model_id: str) -> ModelSpec:
+    """Retrieve the full ModelSpec for a registered model."""
+    if model_id not in _MODEL_SPECS:
+        raise KeyError(
+            f"Model '{model_id}' is not registered. "
+            f"Available models: {list(_MODEL_SPECS.keys())}"
+        )
+    return _MODEL_SPECS[model_id]
+
+
+def list_models(
+    *,
+    enabled_only: bool = False,
+    execution_scope: str | None = None,
+) -> list[str]:
+    """List registered model identifiers in registration order."""
+    out: list[str] = []
+    for model_id, spec in _MODEL_SPECS.items():
+        if enabled_only and not spec.enabled:
+            continue
+        if execution_scope is not None and spec.execution_scope != execution_scope:
+            continue
+        out.append(model_id)
+    return out
+
+
+def get_model_metadata() -> dict[str, dict[str, Any]]:
+    """Return metadata dictionaries for all registered models."""
+    return {
+        model_id: spec.to_metadata_dict()
+        for model_id, spec in _MODEL_SPECS.items()
+    }
+
+
+def get_model_seeds() -> dict[str, tuple[int, ...]]:
+    """Return configured seed tuples for all registered models."""
+    return {
+        model_id: spec.seeds
+        for model_id, spec in _MODEL_SPECS.items()
+    }
+
+
+def get_model_enabled() -> dict[str, bool]:
+    """Return enabled flags for all registered models."""
+    return {
+        model_id: spec.enabled
+        for model_id, spec in _MODEL_SPECS.items()
+    }
+
+
+def get_special_experiments() -> list[dict[str, Any]]:
+    """Return copies of all registered special experiment definitions."""
+    return [dict(item) for item in _SPECIAL_EXPERIMENTS]
 
 
 def run_model(
@@ -75,132 +162,3 @@ def run_model(
         train_seconds=float(train_s),
         predict_seconds=float(pred_s),
     )
-
-
-# ---------------- Built-in Lazy Adapters ----------------
-
-def _make_neural_adapter(model_name: str) -> ModelAdapterFn:
-    def _adapter(
-        x_train: np.ndarray,
-        y_train: np.ndarray,
-        x_eval: np.ndarray,
-        graph_context: GraphContext | None,
-        seed: int,
-    ) -> ModelOutput:
-        from .backends.torch.trainer import fit_predict_neural
-
-        p_tr = graph_context.p_train if graph_context is not None else None
-        p_ev = graph_context.p_eval if graph_context is not None else None
-        return fit_predict_neural(x_train, y_train, x_eval, model_name, seed, p_tr, p_ev)
-
-    return _adapter
-
-
-def _make_classical_adapter(model_name: str) -> ModelAdapterFn:
-    def _adapter(
-        x_train: np.ndarray,
-        y_train: np.ndarray,
-        x_eval: np.ndarray,
-        graph_context: GraphContext | None,
-        seed: int,
-    ) -> ModelOutput:
-        from .backends.classical import fit_predict_classical
-
-        return fit_predict_classical(x_train, y_train, x_eval, model_name, seed)
-
-    return _adapter
-
-
-def _make_pyg_operator_adapter(operator_name: str) -> ModelAdapterFn:
-    def _adapter(
-        x_train: np.ndarray,
-        y_train: np.ndarray,
-        x_eval: np.ndarray,
-        graph_context: GraphContext | None,
-        seed: int,
-    ) -> ModelOutput:
-        import torch
-        from ..core.config import DEVICE
-        from .backends.torch.trainer import fit_predict_homogeneous_operator
-
-        if graph_context is None or graph_context.edge_index_train is None or graph_context.edge_index_eval is None:
-            raise ValueError(f"Model '{operator_name}' requires edge_index_train and edge_index_eval in GraphContext.")
-
-        edge_tr = torch.as_tensor(graph_context.edge_index_train, dtype=torch.long, device=DEVICE)
-        edge_ev = torch.as_tensor(graph_context.edge_index_eval, dtype=torch.long, device=DEVICE)
-        return fit_predict_homogeneous_operator(
-            x_train, y_train, x_eval, operator_name, seed, edge_tr, edge_ev
-        )
-
-    return _adapter
-
-
-def _hetero_term_gnn_adapter(
-    x_train: np.ndarray,
-    y_train: np.ndarray,
-    x_eval: np.ndarray,
-    graph_context: GraphContext | None,
-    seed: int,
-) -> ModelOutput:
-    from .backends.torch.trainer import fit_predict_hetero_term
-
-    if (
-        graph_context is None
-        or graph_context.row_norm_train is None
-        or graph_context.col_norm_train is None
-        or graph_context.row_norm_eval is None
-    ):
-        raise ValueError("HeteroTermGNN requires bipartite incidence matrices in GraphContext.")
-
-    return fit_predict_hetero_term(
-        x_train,
-        y_train,
-        x_eval,
-        graph_context.row_norm_train,
-        graph_context.col_norm_train,
-        graph_context.row_norm_eval,
-        seed,
-    )
-
-
-def _hetero_term_gatv2_adapter(
-    x_train: np.ndarray,
-    y_train: np.ndarray,
-    x_eval: np.ndarray,
-    graph_context: GraphContext | None,
-    seed: int,
-) -> ModelOutput:
-    from .backends.torch.trainer import fit_predict_hetero_term_gatv2
-
-    if (
-        graph_context is None
-        or graph_context.row_norm_train is None
-        or graph_context.col_norm_train is None
-        or graph_context.row_norm_eval is None
-    ):
-        raise ValueError("HeteroTermGATv2 requires bipartite incidence matrices in GraphContext.")
-
-    return fit_predict_hetero_term_gatv2(
-        x_train,
-        y_train,
-        x_eval,
-        graph_context.row_norm_train,
-        graph_context.col_norm_train,
-        graph_context.row_norm_eval,
-        seed,
-    )
-
-
-def register_builtin_models() -> None:
-    """Register the default reference models."""
-    for name in ("linear", "mlp", "gnn"):
-        _MODEL_REGISTRY[name] = _make_neural_adapter(name)
-    for name in ("rf", "xgb"):
-        _MODEL_REGISTRY[name] = _make_classical_adapter(name)
-    for name in ("gcn", "graphsage", "gatv2"):
-        _MODEL_REGISTRY[name] = _make_pyg_operator_adapter(name)
-    _MODEL_REGISTRY["hetero_term_gnn"] = _hetero_term_gnn_adapter
-    _MODEL_REGISTRY["hetero_term_gatv2"] = _hetero_term_gatv2_adapter
-
-
-register_builtin_models()

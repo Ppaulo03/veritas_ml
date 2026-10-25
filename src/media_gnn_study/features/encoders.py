@@ -14,7 +14,7 @@ import pandas as pd
 
 from ..core.config import (
     CACHE,
-    DEVICE,
+    DEVICE_NAME,
     EMBED_RULE,
     EMOTION_MODEL_ID,
     MODEL_ID,
@@ -169,7 +169,7 @@ def _encode_emotion_chunks(
     with torch.inference_mode():
         for start in range(0, len(owner), batch_size):
             batch = {
-                k: v[start : start + batch_size].to(DEVICE)
+                k: v[start : start + batch_size].to(DEVICE_NAME)
                 for k, v in packed.items()
                 if k in ("input_ids", "attention_mask", "token_type_ids")
             }
@@ -211,7 +211,7 @@ def get_emotion_features(dev: pd.DataFrame) -> tuple[np.ndarray, list[str], dict
         EMOTION_MODEL_ID,
         revision=revision,
         trust_remote_code=False,
-    ).to(DEVICE)
+    ).to(DEVICE_NAME)
 
     x = _encode_emotion_chunks(dev.texto.tolist(), tokenizer, model)
     labels = [str(model.config.id2label[i]) for i in range(model.config.num_labels)]
