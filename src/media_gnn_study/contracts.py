@@ -3,6 +3,7 @@
 from .core.contracts import (
     DatasetContext,
     FeatureContext,
+    GraphContext,
     ExperimentPlan,
     ExperimentResult,
     StudyResult,
@@ -12,6 +13,7 @@ from .core.contracts import (
 __all__ = [
     "DatasetContext",
     "FeatureContext",
+    "GraphContext",
     "ExperimentPlan",
     "ExperimentResult",
     "StudyResult",

@@ -6,6 +6,7 @@ from .contracts import (
     ExperimentPlan,
     ExperimentResult,
     FeatureContext,
+    GraphContext,
     StudyResult,
     stable_id,
 )

@@ -25,6 +25,21 @@ def stable_id(prefix: str, value: Any) -> str:
 
 
 @dataclass(frozen=True)
+class GraphContext:
+    """Inductive graph topology data delivered to models (100% framework-agnostic in NumPy)."""
+
+    p_train: np.ndarray | None = None
+    p_eval: np.ndarray | None = None
+    edge_index_train: np.ndarray | None = None
+    edge_index_eval: np.ndarray | None = None
+    edges_df: pd.DataFrame | None = None
+    row_norm_train: np.ndarray | None = None
+    col_norm_train: np.ndarray | None = None
+    row_norm_eval: np.ndarray | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class DatasetContext:
     """Immutable snapshot of the dataset, target labels, and CV partition structure."""
 
