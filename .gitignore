@@ -6,6 +6,7 @@ dist/
 build/
 *.egg-info/
 .DS_Store
-# datasets/results stay outside Git
+# datasets/results/caches stay outside Git
 01_dados/
+02_cache/
 03_resultados/

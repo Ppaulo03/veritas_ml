@@ -115,7 +115,8 @@ ACTION_SVD_DIM = 64
 NMF_DIM = 16
 
 # ---------------- Paths ----------------
-ROOT = Path(os.environ.get("GNN_PROJECT_ROOT", Path.cwd())).expanduser().resolve()
+_default_root = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
+ROOT = Path(os.environ.get("GNN_PROJECT_ROOT", _default_root)).expanduser().resolve()
 DATA = ROOT / "01_dados" / "medias_classificadas.csv"
 PARTS = ROOT / "01_dados" / "particoes_franquias.csv"
 LEGACY_PARTS = ROOT / "03_resultados" / "01_1_qualidade_extracao" / "20261019T230939Z" / "particoes_franquias.csv"

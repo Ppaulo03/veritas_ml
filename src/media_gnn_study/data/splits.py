@@ -63,7 +63,6 @@ def build_dataset_context(
     allow_local_fallback: bool = False,
 ) -> DatasetContext:
     """Assemble DatasetContext from frozen files and optionally persist fold assignments."""
-    ensure_runtime_dirs()
     resolved_data = Path(data_path or DATA)
     resolved_split = Path(split_path or PARTS)
 
@@ -92,6 +91,7 @@ def build_dataset_context(
         },
     )
     if persist_folds:
+        ensure_runtime_dirs()
         fold_df = pd.DataFrame({"Id": dataset.frame.Id, "fold": dataset.fold_id + 1})
         fold_df.to_csv(STUDY_DIR / "folds.csv", index=False)
 
