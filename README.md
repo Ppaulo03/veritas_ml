@@ -1,6 +1,6 @@
 # Media GNN Study
 
-Código modular do estudo de classificação multilabel de obras de mídia. O dataset e os resultados permanecem no Google Drive; o repositório contém somente código, configuração experimental e testes.
+Framework experimental agnóstico para classificação multirrótulo de obras de mídia e benchmark relacional em grafos. O dataset e os artefatos de execução permanecem no Google Drive; o repositório contém contratos, protocolo indutivo, extração de representações, motor de avaliação e testes.
 
 ## Objetivo
 
@@ -8,51 +8,66 @@ Pergunta central: **relacionar obras em um grafo ajuda a classificá-las melhor 
 
 Métricas primárias: micro-F1 e macro-F1. O conjunto de auditoria permanece reservado até o congelamento da metodologia.
 
-## Estrutura
+## Estrutura Modular
 
 ```text
 src/media_gnn_study/
-  config.py       # protocolo, caminhos e hiperparâmetros
-  contracts.py    # DatasetContext / ExperimentPlan / Result contracts
-  data.py         # dataset congelado e folds agrupados
-  features.py     # MiniLM, TF-IDF/SVD, emoção, entidades, tópicos etc.
-  models.py       # Linear, MLP, Fixed-kNN, GCN, GraphSAGE, GATv2, hetero
-  plan.py         # catálogo de bundles e experimentos focais
-  engine.py       # execução incremental + persistência
-  diagnostics.py  # learning curve e diagnósticos relacionais
-  study.py        # montagem do StudyResult
-  render.py       # renderer agnóstico
-  pipeline.py     # orquestração de alto nível
+├── core/
+│   ├── config.py       # protocolo, caminhos e hiperparâmetros
+│   ├── contracts.py    # DatasetContext / FeatureContext / GraphContext / ExperimentResult / StudyResult
+│   └── graph.py        # álgebra de grafos indutiva pura em NumPy/SciPy (kNN, poda top-k, incidência bipartida)
+├── data/
+│   ├── loader.py       # leitura do CSV, limpeza e validação criptográfica SHA-256
+│   └── splits.py       # folds agrupados por franquia sem vazamento
+├── features/
+│   ├── encoders.py     # MiniLM e XLM-RoBERTa emoção (com cache em disco)
+│   ├── linguistic.py   # spaCy NER, pares verbo-objeto e métricas sintáticas
+│   └── lexical.py      # TF-IDF, SVD, NMF e montagem fold-local do FeatureContext
+├── models/
+│   ├── base.py         # contrato ModelOutput e protocolo ModelAdapterFn
+│   ├── metrics.py      # métricas multirrótulo e por classe
+│   ├── registry.py     # catálogo plugável (register_model / run_model)
+│   └── backends/       # implementações de referência (Classical e PyTorch/PyG)
+├── engine/
+│   ├── plan.py         # catálogo de 55 bundles e experimentos focais
+│   ├── sanity.py       # verificações pré-execução do protocolo indutivo
+│   └── runner.py       # execução incremental agnóstica a framework
+├── evaluation/
+│   ├── diagnostics.py  # homofilia × ganho, learning curves e subgrafos qualitativos
+│   ├── study.py        # montagem do StudyResult e fronteira de Pareto
+│   ├── render.py       # renderizador declarativo de tabelas e figuras
+│   └── manifest.py     # manifesto JSON de reprodutibilidade
+└── pipeline.py         # orquestração de alto nível (run_study)
 ```
 
-## Colab
+## Injetando Modelos Customizados (TensorFlow / Keras / PyTorch) no Notebook
 
-1. Monte o Drive.
-2. Clone este repositório.
-3. Defina `GNN_PROJECT_ROOT=/content/drive/MyDrive/Pesquisa GNN Midias` **antes de importar o pacote**.
-4. Instale em modo editável: `pip install -e ".[full]"`.
-5. Execute `from media_gnn_study import run_study; result = run_study()`.
+O motor experimental conversa com os modelos exclusivamente via arrays NumPy e o contrato `GraphContext`:
 
-Veja `notebooks/00_estudo_central_colab.ipynb`.
+```python
+from media_gnn_study import register_model, ModelOutput, run_study
 
-## Execução incremental
+def meu_modelo_tensorflow(x_train, y_train, x_eval, graph_context, seed):
+    # graph_context entrega p_train, p_eval, edge_index_train, edge_index_eval em NumPy
+    # Treine seu modelo em TensorFlow/Keras, PyTorch ou JAX:
+    ...
+    return ModelOutput(
+        probabilities=prob_eval,
+        complexity=num_params,
+        complexity_type="parameters",
+        train_seconds=train_s,
+        predict_seconds=pred_s,
+    )
 
-Por padrão:
+register_model(
+    "tf_gnn",
+    meu_modelo_tensorflow,
+    metadata={"display_name": "TensorFlow GNN", "family": "graph", "role": "relational"},
+)
+```
 
-- `GNN_INCREMENTAL_REUSE=1`
-- `GNN_INCREMENTAL_REUSE_STRICT=1`
-- `GNN_INCREMENTAL_BASE_RUN_ID=20261025T142618Z_d9aa19`
-
-O modo estrito falha se a base não puder ser validada; não cai silenciosamente para rerun completo. Para a rodada final congelada, use `GNN_INCREMENTAL_REUSE=0`.
-
-## Testes
+## Testes Locais (via `uv`)
 
 ```bash
-pytest -q
+uv run pytest
 ```
-
-Os testes iniciais protegem as propriedades mais sensíveis do protocolo: normalização da propagação kNN, ausência de validação→treino/validação e poda top-k sem rótulos.
-
-## Versionamento para evidência final
-
-Na rodada final, registre o commit Git junto ao manifesto da execução e faça checkout desse commit no Colab. Evite executar a evidência final a partir de `main` mutável.
