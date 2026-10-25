@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "media-gnn-study"
+version = "0.1.0"
+description = "Experimental framework for multilabel media classification with text representations and graphs"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.1",
+  "scikit-learn>=1.4",
+  "torch>=2.2",
+  "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+full = [
+  "sentence-transformers>=3",
+  "transformers>=4.40",
+  "spacy>=3.7",
+  "xgboost>=2",
+  "torch-geometric>=2.5",
+  "pytest>=8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
