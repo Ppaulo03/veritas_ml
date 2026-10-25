@@ -56,12 +56,12 @@ class DatasetContext:
 class FeatureContext:
     """Extracted feature representations, metadata, and timing profiles per fold."""
 
-    fold_packs: list[dict[str, Any]]
-    catalog: pd.DataFrame
-    fixed_meta: dict[str, Any]
-    fixed_extraction_timing: pd.DataFrame
-    fold_meta: pd.DataFrame
-    component_timing: pd.DataFrame
+    fold_packs: list[dict[str, Any]] | tuple[dict[str, Any], ...]
+    catalog: pd.DataFrame = field(default_factory=pd.DataFrame)
+    fixed_meta: dict[str, Any] = field(default_factory=dict)
+    fixed_extraction_timing: pd.DataFrame = field(default_factory=pd.DataFrame)
+    fold_meta: pd.DataFrame = field(default_factory=pd.DataFrame)
+    component_timing: pd.DataFrame = field(default_factory=pd.DataFrame)
 
 
 @dataclass(frozen=True)

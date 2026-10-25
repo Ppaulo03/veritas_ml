@@ -104,10 +104,11 @@ def bundle_component_time(
     bundle: Sequence[str],
 ) -> tuple[float, float, list[str]]:
     """Aggregate deduplicated fit and transform seconds across feature components in a bundle."""
+    source_map = pack.get("source_components", SOURCE_COMPONENTS)
     names: list[str] = []
     for source in bundle:
-        names.extend(SOURCE_COMPONENTS[source])
-    unique = list(dict.fromkeys(names))
+        names.extend(source_map.get(source, (source,)))
+    unique = [c for c in dict.fromkeys(names) if c in pack.get("components", {})]
     fit = sum(float(pack["components"][c]["fit_seconds"]) for c in unique)
     transform = sum(float(pack["components"][c]["transform_seconds"]) for c in unique)
     return fit, transform, unique
