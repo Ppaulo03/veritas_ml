@@ -1,17 +1,16 @@
 """Experimental study protocol, graph topology rules, and environment paths.
 
-Completely model-agnostic and framework-agnostic configuration:
+Completely model-agnostic, framework-agnostic, and dataset-agnostic configuration:
 - Cross-validation protocol and default seeds
 - Evaluation metrics and reference selection policies
 - Inductive graph construction parameters
-- Dataset paths, cache directories, and SHA-256 integrity fingerprints
+- Runtime and cache directories
 """
 
 from __future__ import annotations
 
 import os
 import platform
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,22 +90,13 @@ HETERO_TERM_CFG: dict[str, Any] = {
     ),
 }
 
-# ---------------- Environment and Dataset Constants ----------------
+# ---------------- Feature Extractor Defaults ----------------
 CPU_THREADS = max(1, min(4, os.cpu_count() or 1))
 DEVICE_NAME = os.environ.get("GNN_DEVICE", "cpu")
 
-TARGET = "Macrogênero (Gênero unificado)"
-CLASSES = [
-    "Aventura", "Ação", "Comédia", "Cozy", "Drama", "Esportes", "Fantasia",
-    "Ficção Científica", "Guerra", "Mistério", "Musical", "Realidade", "Romance", "Terror"
-]
-
-DATA_SHA = "55808c037dd84fec48b9f272d2187e6372590ad0b4f083f0acc831695e7c5907"
-SPLIT_SHA = "839157ec5a84b8f6542adda81122602529012815fc73bb9e78ddff8eb6a3ed38"
 MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 MODEL_REVISION = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
 EMBED_RULE = "token_chunks_no_overlap_content_weighted_mean_l2_v1"
-REFERENCE_MINILM_RUN = "20261021T002245Z_227139"
 SPACY_MODEL_ID = "pt_core_news_sm"
 EMOTION_MODEL_ID = "MilaNLProc/xlm-emo-t"
 ENTITY_HASH_DIM = 64
@@ -117,27 +107,25 @@ NMF_DIM = 16
 # ---------------- Paths ----------------
 _default_root = Path.cwd().parent if Path.cwd().name == "notebooks" else Path.cwd()
 ROOT = Path(os.environ.get("GNN_PROJECT_ROOT", _default_root)).expanduser().resolve()
-DATA = ROOT / "01_dados" / "medias_classificadas.csv"
-PARTS = ROOT / "01_dados" / "particoes_franquias.csv"
-LEGACY_PARTS = ROOT / "03_resultados" / "01_1_qualidade_extracao" / "20261019T230939Z" / "particoes_franquias.csv"
+DATA = ROOT / "01_dados" / "dataset.csv"
+PARTS = ROOT / "01_dados" / "partitions.csv"
 CENTRAL = ROOT / "03_resultados" / "00_estudo_central"
 CACHE = CENTRAL / "cache"
-RUN_ID = os.environ.get("GNN_RUN_ID") or (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:6])
+RUN_ID = os.environ.get("GNN_RUN_ID") or (
+    datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + uuid4().hex[:6]
+)
 RUN_DIR = CENTRAL / "runs" / RUN_ID
 STUDY_DIR = RUN_DIR / "estudo_unificado"
 
-INCREMENTAL_REUSE = os.getenv("GNN_INCREMENTAL_REUSE", "1") == "1"
-INCREMENTAL_REUSE_STRICT = os.getenv("GNN_INCREMENTAL_REUSE_STRICT", "1") == "1"
-INCREMENTAL_BASE_RUN_ID = os.getenv("GNN_INCREMENTAL_BASE_RUN_ID", "20261025T142618Z_d9aa19")
+INCREMENTAL_REUSE = os.getenv("GNN_INCREMENTAL_REUSE", "0") == "1"
+INCREMENTAL_REUSE_STRICT = os.getenv("GNN_INCREMENTAL_REUSE_STRICT", "0") == "1"
+INCREMENTAL_BASE_RUN_ID = os.getenv("GNN_INCREMENTAL_BASE_RUN_ID", "")
 
 
 def ensure_runtime_dirs() -> Path:
     """Ensure required output and cache directories exist on disk."""
     CACHE.mkdir(parents=True, exist_ok=True)
     STUDY_DIR.mkdir(parents=True, exist_ok=True)
-    if not PARTS.is_file() and LEGACY_PARTS.is_file():
-        PARTS.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(LEGACY_PARTS, PARTS)
     return STUDY_DIR
 
 

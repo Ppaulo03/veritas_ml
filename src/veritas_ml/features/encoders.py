@@ -19,8 +19,6 @@ from ..core.config import (
     EMOTION_MODEL_ID,
     MODEL_ID,
     MODEL_REVISION,
-    REFERENCE_MINILM_RUN,
-    ROOT,
 )
 from ..core.graph import safe_unit_rows
 
@@ -83,25 +81,20 @@ def encode_documents(texts: list[str], encoder: Any, batch_size: int = 32) -> np
 def get_minilm_features(dev: pd.DataFrame) -> tuple[np.ndarray, dict[str, Any]]:
     """Retrieve or compute frozen MiniLM embeddings for development synopses."""
     cache_path = CACHE / "minilm_embeddings.npz"
-    legacy = ROOT / "03_resultados" / "02_mvp_mlp_vs_gnn" / REFERENCE_MINILM_RUN / "embeddings_dev.npz"
 
-    for source in (cache_path, legacy):
-        if source.is_file():
-            with np.load(source, allow_pickle=False) as z:
-                ids = z["ids"].astype(str).tolist()
-                x = z["X"].astype(np.float32)
-            if ids == dev.Id.tolist() and x.shape == (len(dev), 384):
-                x = safe_unit_rows(x)
-                if source != cache_path:
-                    cache_path.parent.mkdir(parents=True, exist_ok=True)
-                    np.savez_compressed(cache_path, ids=dev.Id.to_numpy(dtype=str), X=x)
-                return x, {
-                    "cache_hit": True,
-                    "source": str(source),
-                    "model": MODEL_ID,
-                    "revision": MODEL_REVISION,
-                    "rule": EMBED_RULE,
-                }
+    if cache_path.is_file():
+        with np.load(cache_path, allow_pickle=False) as z:
+            ids = z["ids"].astype(str).tolist()
+            x = z["X"].astype(np.float32)
+        if ids == dev.Id.tolist() and x.shape == (len(dev), 384):
+            x = safe_unit_rows(x)
+            return x, {
+                "cache_hit": True,
+                "source": str(cache_path),
+                "model": MODEL_ID,
+                "revision": MODEL_REVISION,
+                "rule": EMBED_RULE,
+            }
 
     from sentence_transformers import SentenceTransformer
 

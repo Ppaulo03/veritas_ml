@@ -13,13 +13,11 @@ import pandas as pd
 from ..core.config import (
     CENTRAL,
     CV_SEED,
-    DATA_SHA,
     EXPERIMENT_SCHEMA_VERSION,
     FIXED_THRESHOLD,
     INCREMENTAL_BASE_RUN_ID,
     INCREMENTAL_REUSE,
     INCREMENTAL_REUSE_STRICT,
-    SPLIT_SHA,
     STUDY_DIR,
     STUDY_VERSION,
 )
@@ -222,8 +220,8 @@ def load_incremental_base(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         ds = manifest.get("dataset", {})
         checks = {
-            "dataset_hash": ds.get("data_sha256") == DATA_SHA,
-            "split_hash": ds.get("split_sha256") == SPLIT_SHA,
+            "dataset_hash": ds.get("data_sha256") == dataset.metadata.get("data_sha256"),
+            "split_hash": ds.get("split_sha256") == dataset.metadata.get("split_sha256"),
             "audit_unused": manifest.get("audit_used") is False,
             "cv_splits": manifest.get("cv", {}).get("outer_splits") == len(dataset.folds),
             "fold_seed": manifest.get("cv", {}).get("fold_seed") == CV_SEED,

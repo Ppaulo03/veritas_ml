@@ -1,4 +1,4 @@
-"""Franchise-grouped cross-validation folds and DatasetContext assembly."""
+"""Group-disjoint cross-validation folds and DatasetContext assembly."""
 
 from __future__ import annotations
 
@@ -9,19 +9,15 @@ import numpy as np
 import pandas as pd
 
 from ..core.config import (
-    CLASSES,
     CV_SEED,
     CV_SPLITS,
     DATA,
-    DATA_SHA,
     PARTS,
-    SPLIT_SHA,
     STUDY_DIR,
-    TARGET,
     ensure_runtime_dirs,
 )
 from ..core.contracts import DatasetContext
-from .loader import load_development
+from .loader import load_development, sha256
 
 
 def make_grouped_folds(
@@ -29,7 +25,7 @@ def make_grouped_folds(
     n_splits: int = CV_SPLITS,
     seed: int = CV_SEED,
 ) -> tuple[list[tuple[np.ndarray, np.ndarray]], np.ndarray]:
-    """Build greedy size-balanced group folds ensuring zero franchise overlap across splits."""
+    """Build greedy size-balanced group folds ensuring zero group overlap across splits."""
     groups_series = pd.Series(groups, dtype=str).reset_index(drop=True)
     sizes = groups_series.value_counts().rename_axis("group").reset_index(name="size")
 
@@ -60,33 +56,61 @@ def build_dataset_context(
     split_path: str | Path | None = None,
     persist_folds: bool = True,
     *,
+    target_col: str | None = None,
+    text_col: str | None = None,
+    classes: Sequence[str] | None = None,
+    expected_data_sha: str | None = None,
+    expected_split_sha: str | None = None,
     allow_local_fallback: bool = False,
+    n_splits: int = CV_SPLITS,
+    seed: int = CV_SEED,
+    sep: str = ";",
 ) -> DatasetContext:
-    """Assemble DatasetContext from frozen files and optionally persist fold assignments."""
+    """Assemble DatasetContext from CSV files, computing SHA-256 digests dynamically."""
     resolved_data = Path(data_path or DATA)
     resolved_split = Path(split_path or PARTS)
 
     dev, y, partitions = load_development(
         resolved_data,
         resolved_split,
+        target_col=target_col,
+        text_col=text_col,
+        classes=classes,
+        expected_data_sha=expected_data_sha,
+        expected_split_sha=expected_split_sha,
         allow_local_fallback=allow_local_fallback,
+        sep=sep,
     )
-    folds, fold_id = make_grouped_folds(dev.grupo_franquia)
-    is_official_split = resolved_split.is_file()
+    folds, fold_id = make_grouped_folds(dev.grupo_franquia, n_splits=n_splits, seed=seed)
+
+    actual_data_sha = sha256(resolved_data)
+    actual_split_sha = (
+        sha256(resolved_split) if resolved_split.is_file() else "LOCAL_FALLBACK_SPLIT"
+    )
+    resolved_target = target_col or (
+        "Macrogênero (Gênero unificado)"
+        if "Macrogênero (Gênero unificado)" in dev.columns
+        else "target"
+    )
+    if classes is not None:
+        resolved_classes = tuple(classes)
+    else:
+        labels = [[x.strip() for x in s.split(",") if x.strip()] for s in dev[resolved_target]]
+        resolved_classes = tuple(sorted({x for row in labels for x in row}))
 
     dataset = DatasetContext(
         frame=dev,
         targets=y,
-        classes=tuple(CLASSES),
+        classes=resolved_classes,
         folds=tuple(folds),
         fold_id=fold_id,
         partitions=partitions,
         metadata={
-            "data_sha256": DATA_SHA,
-            "split_sha256": SPLIT_SHA if is_official_split else "LOCAL_FALLBACK_SPLIT",
+            "data_sha256": actual_data_sha,
+            "split_sha256": actual_split_sha,
             "n_development": int(len(dev)),
             "n_audit_reserved": int((partitions.particao == "auditoria").sum()),
-            "target_column": TARGET,
+            "target_column": resolved_target,
             "group_column": "grupo_franquia",
         },
     )
@@ -99,7 +123,7 @@ def build_dataset_context(
 
 
 def fold_summary(dataset: DatasetContext) -> pd.DataFrame:
-    """Generate a summary table of sample counts, unique franchises, and minimum class support per fold."""
+    """Generate a summary table of sample counts, unique groups, and minimum class support per fold."""
     rows = []
     for fold, (tr, va) in enumerate(dataset.folds, start=1):
         support = dataset.targets[tr].sum(axis=0)

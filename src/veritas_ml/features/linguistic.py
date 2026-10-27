@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -12,9 +13,14 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import HashingVectorizer
 
-from ..core.config import CACHE, DATA_SHA, ENTITY_HASH_DIM, SPACY_MODEL_ID
+from ..core.config import CACHE, ENTITY_HASH_DIM, SPACY_MODEL_ID
 from ..core.graph import safe_unit_rows
 from ..data.loader import clean_text
+
+
+def _frame_sha256(dev: pd.DataFrame) -> str:
+    payload = "\n".join(f"{i}\t{t}" for i, t in zip(dev.Id, dev.texto)).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def _entity_key(text: str) -> str:
@@ -37,6 +43,7 @@ def get_spacy_text_views(
     """
     cache = CACHE / f"spacy_text_views_{SPACY_MODEL_ID}_v2.npz"
     meta_path = CACHE / f"spacy_text_views_{SPACY_MODEL_ID}_v2.json"
+    current_sha = _frame_sha256(dev)
 
     if cache.is_file() and meta_path.is_file():
         with np.load(cache, allow_pickle=False) as z:
@@ -53,45 +60,6 @@ def get_spacy_text_views(
                 "cache_hit": True,
                 "source": str(cache),
             }
-
-    # Backward compatibility with v1 separate caches
-    old_ent = CACHE / f"entidades_{SPACY_MODEL_ID}_{ENTITY_HASH_DIM}d_v1.npz"
-    old_narr = CACHE / f"narrativa_{SPACY_MODEL_ID}_v1.npz"
-    if old_ent.is_file() and old_narr.is_file():
-        with np.load(old_ent, allow_pickle=False) as ze, np.load(old_narr, allow_pickle=False) as zn:
-            ids_e = ze["ids"].astype(str).tolist()
-            ids_n = zn["ids"].astype(str).tolist()
-            if ids_e == dev.Id.tolist() == ids_n:
-                x_ent = ze["X"].astype(np.float32)
-                entity_labels = ze["labels"].astype(str).tolist()
-                action_docs = zn["action_docs"].astype(str).tolist()
-                x_ling = zn["X_linguistic_raw"].astype(np.float32)
-                ling_names = zn["feature_names"].astype(str).tolist()
-
-                cache.parent.mkdir(parents=True, exist_ok=True)
-                np.savez_compressed(
-                    cache,
-                    ids=dev.Id.to_numpy(dtype=str),
-                    X_entities=x_ent,
-                    entity_labels=np.asarray(entity_labels, dtype=str),
-                    action_docs=np.asarray(action_docs, dtype=str),
-                    X_linguistic_raw=x_ling,
-                    linguistic_feature_names=np.asarray(ling_names, dtype=str),
-                )
-                meta = {
-                    "model": SPACY_MODEL_ID,
-                    "data_sha256": DATA_SHA,
-                    "rule": "reused_legacy_entity_and_narrative_caches",
-                    "reused_legacy_caches": True,
-                    "entity_dimensions": int(x_ent.shape[1]),
-                    "linguistic_dimensions": int(x_ling.shape[1]),
-                }
-                meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-                return x_ent, entity_labels, action_docs, x_ling, ling_names, {
-                    **meta,
-                    "cache_hit": True,
-                    "source": "legacy_caches",
-                }
 
     import spacy
 
@@ -224,7 +192,7 @@ def get_spacy_text_views(
     meta = {
         "model": SPACY_MODEL_ID,
         "spacy_version": spacy.__version__,
-        "data_sha256": DATA_SHA,
+        "data_sha256": current_sha,
         "entity_rule": "entity_surface_hash_plus_type_proportions_and_counts_v1",
         "action_rule": "verb_lemmas_plus_simple_dependency_objects_v1",
         "linguistic_rule": "length_lexical_pos_negation_punctuation_v1",
