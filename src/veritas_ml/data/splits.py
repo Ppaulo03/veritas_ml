@@ -17,7 +17,7 @@ from ..core.config import (
     ensure_runtime_dirs,
 )
 from ..core.contracts import DatasetContext
-from .loader import _truthy_mask, load_development, sha256
+from .loader import _parse_multilabel_cell, _truthy_mask, load_development, sha256
 
 
 def make_grouped_folds(
@@ -97,7 +97,7 @@ def build_dataset_context(
     if classes is not None:
         resolved_classes = tuple(classes)
     else:
-        labels = [[x.strip() for x in s.split(",") if x.strip()] for s in dev[resolved_target]]
+        labels = [_parse_multilabel_cell(s) for s in dev[resolved_target]]
         resolved_classes = tuple(sorted({x for row in labels for x in row}))
 
     if exclude_col is not None:

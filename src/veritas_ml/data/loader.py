@@ -30,6 +30,14 @@ def _truthy_mask(series: pd.Series) -> pd.Series:
     )
 
 
+def _parse_multilabel_cell(value: str) -> list[str]:
+    """Parse a multilabel cell serialized as 'A,B' or '{A,B}'."""
+    value = str(value).strip()
+    if value.startswith("{") and value.endswith("}"):
+        value = value[1:-1].strip()
+    return [x.strip() for x in value.split(",") if x.strip()]
+
+
 def clean_text(text: str) -> str:
     """Strip standard editorial footers (e.g., MAL Rewrite) and normalize whitespace."""
     cleaned = re.sub(
@@ -161,7 +169,7 @@ def load_development(
 
     assert len(dev) > 0 and dev.texto.str.len().gt(0).all()
 
-    labels = [[x.strip() for x in s.split(",") if x.strip()] for s in dev[resolved_target]]
+    labels = [_parse_multilabel_cell(s) for s in dev[resolved_target]]
     resolved_classes = (
         list(classes)
         if classes is not None

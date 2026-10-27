@@ -1,6 +1,7 @@
 """Tests for data loading utilities, dynamic SHA-256 verification, exclusion masks, and grouped fold splits."""
 
 from pathlib import Path
+import numpy as np
 import pytest
 from veritas_ml.data import (
     build_dataset_context,
@@ -8,11 +9,83 @@ from veritas_ml.data import (
     make_grouped_folds,
     sha256,
 )
+from veritas_ml.data.loader import _parse_multilabel_cell
 
 
 def test_clean_text_strips_mal_rewrite_and_normalizes_spaces():
     raw = "Sinopse legal   com espaços.\n\n[Escrito por MAL Reescrever]"
     assert clean_text(raw) == "Sinopse legal com espaços."
+
+
+def test_parse_multilabel_cell_handles_braces_spaces_single_and_empty():
+    assert _parse_multilabel_cell("Ação,Drama") == ["Ação", "Drama"]
+    assert _parse_multilabel_cell("{Ação,Drama}") == ["Ação", "Drama"]
+    assert _parse_multilabel_cell("  { Ação ,  Drama }  ") == ["Ação", "Drama"]
+    assert _parse_multilabel_cell("Ação") == ["Ação"]
+    assert _parse_multilabel_cell("{Ação}") == ["Ação"]
+    assert _parse_multilabel_cell("") == []
+    assert _parse_multilabel_cell("   ") == []
+    assert _parse_multilabel_cell("{}") == []
+    assert _parse_multilabel_cell("{ ,  }") == []
+
+
+def test_dataset_context_accepts_braced_multilabel_and_rejects_unknown_classes(tmp_path: Path):
+    csv_path = tmp_path / "braced_data.csv"
+    parts_path = tmp_path / "braced_parts.csv"
+    rows = [
+        "Id;Nome;Sinopse;Macrogênero (Gênero unificado)",
+        "1;Obra 1;Sinopse um;{Ação,Drama}",
+        "2;Obra 2;Sinopse dois;{ Ação, SciFi }",
+        "3;Obra 3;Sinopse três;{Drama}",
+        "4;Obra 4;Sinopse quatro;SciFi, Drama",
+    ]
+    parts_rows = [
+        "Id,particao,grupo_franquia",
+        "1,desenvolvimento,g1",
+        "2,desenvolvimento,g2",
+        "3,desenvolvimento,g3",
+        "4,desenvolvimento,g4",
+    ]
+    csv_path.write_text("\n".join(rows), encoding="utf-8")
+    parts_path.write_text("\n".join(parts_rows), encoding="utf-8")
+
+    dataset = build_dataset_context(
+        data_path=csv_path,
+        split_path=parts_path,
+        persist_folds=False,
+        classes=("Ação", "Drama", "SciFi"),
+        n_splits=2,
+    )
+    assert dataset.classes == ("Ação", "Drama", "SciFi")
+    expected_y = np.array(
+        [
+            [1.0, 1.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+        ],
+        dtype=np.float32,
+    )
+    assert np.array_equal(dataset.targets, expected_y)
+
+    # Auto-inferred classes when classes=None must also match without braces
+    dataset_auto = build_dataset_context(
+        data_path=csv_path,
+        split_path=parts_path,
+        persist_folds=False,
+        n_splits=2,
+    )
+    assert dataset_auto.classes == ("Ação", "Drama", "SciFi")
+
+    # Unknown class must still be strictly rejected
+    with pytest.raises(AssertionError, match="Classes não previstas"):
+        build_dataset_context(
+            data_path=csv_path,
+            split_path=parts_path,
+            persist_folds=False,
+            classes=("Ação", "Drama"),
+            n_splits=2,
+        )
 
 
 def test_dynamic_sha256_and_dataset_context_from_custom_csv(tmp_path: Path):
