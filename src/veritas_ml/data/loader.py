@@ -81,13 +81,16 @@ def load_development(
     classes: Sequence[str] | None = None,
     expected_data_sha: str | None = None,
     expected_split_sha: str | None = None,
+    exclude_col: str | None = None,
     allow_local_fallback: bool = False,
     sep: str = ";",
 ) -> tuple[pd.DataFrame, np.ndarray, pd.DataFrame]:
     """Load and validate a development split and binary multilabel target matrix.
 
     Computes SHA-256 digests dynamically and optionally verifies them against
-    ``expected_data_sha`` and ``expected_split_sha`` when provided.
+    ``expected_data_sha`` and ``expected_split_sha`` when provided. If
+    ``exclude_col`` is given, rows marked as truthy (``true``, ``1``, ``yes``)
+    in that partition column are excluded from the development split.
     """
     resolved_data = Path(data_path)
     if not resolved_data.is_file():
@@ -122,8 +125,21 @@ def load_development(
     assert raw.Id.is_unique and parts.Id.is_unique and set(raw.Id) == set(parts.Id)
     assert set(parts.particao).issubset({"desenvolvimento", "auditoria"})
 
-    g_dev = set(parts.loc[parts.particao == "desenvolvimento", "grupo_franquia"])
-    g_aud = set(parts.loc[parts.particao == "auditoria", "grupo_franquia"])
+    dev_mask = parts["particao"].eq("desenvolvimento")
+    if exclude_col is not None:
+        if exclude_col not in parts.columns:
+            raise ValueError(f"Coluna de exclusão ausente: {exclude_col}")
+        excluded = (
+            parts[exclude_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .isin({"true", "1", "yes"})
+        )
+        dev_mask &= ~excluded
+
+    g_dev = set(parts.loc[dev_mask, "grupo_franquia"])
+    g_aud = set(parts.loc[parts["particao"].eq("auditoria"), "grupo_franquia"])
     assert not (g_dev & g_aud), "Group leakage detected between development and audit sets."
 
     resolved_target = target_col or (
@@ -133,7 +149,7 @@ def load_development(
     )
     resolved_text = text_col or ("Sinopse" if "Sinopse" in raw.columns else "texto")
 
-    dev_ids = set(parts.loc[parts.particao == "desenvolvimento", "Id"])
+    dev_ids = set(parts.loc[dev_mask, "Id"])
     keep_cols = [c for c in ("Id", "Nome", resolved_text, "Origem", resolved_target) if c in raw.columns]
     dev = raw.loc[raw.Id.isin(dev_ids), keep_cols].copy()
     dev = dev.merge(parts[["Id", "grupo_franquia"]], on="Id", validate="one_to_one")

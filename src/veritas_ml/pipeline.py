@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .core.config import RUN_DIR, STUDY_DIR, ensure_runtime_dirs
+from .core.contracts import DatasetContext
 from .data import build_dataset_context
 from .engine import build_experiment_plan, execute_experiments, plan_summary, run_sanity_checks
 from .evaluation import (
@@ -19,20 +20,28 @@ from .features import prepare_feature_context
 
 def run_study(
     *,
+    dataset: DatasetContext | None = None,
     render: bool = True,
     allow_local_fallback: bool = False,
     registry: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
     run_full_diagnostics: bool = True,
+    **dataset_kwargs: Any,
 ) -> dict[str, Any]:
-    """Execute the complete media GNN study pipeline from dataset loading to report generation."""
+    """Execute the complete study pipeline from dataset loading to report generation."""
     ensure_runtime_dirs()
-    dataset = build_dataset_context(allow_local_fallback=allow_local_fallback)
+    if dataset is None:
+        dataset = build_dataset_context(
+            allow_local_fallback=allow_local_fallback,
+            **dataset_kwargs,
+        )
     plan = build_experiment_plan(dataset, registry=registry)
     print(
         "Dataset:",
         len(dataset.frame),
         "development | audit reservado:",
-        dataset.metadata["n_audit_reserved"],
+        dataset.metadata.get("n_audit_reserved", 0),
+        "| excluídos:",
+        dataset.metadata.get("n_excluded", 0),
     )
     print("Plano:", plan_summary(plan, dataset))
 

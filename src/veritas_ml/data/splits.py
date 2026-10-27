@@ -61,6 +61,7 @@ def build_dataset_context(
     classes: Sequence[str] | None = None,
     expected_data_sha: str | None = None,
     expected_split_sha: str | None = None,
+    exclude_col: str | None = None,
     allow_local_fallback: bool = False,
     n_splits: int = CV_SPLITS,
     seed: int = CV_SEED,
@@ -78,6 +79,7 @@ def build_dataset_context(
         classes=classes,
         expected_data_sha=expected_data_sha,
         expected_split_sha=expected_split_sha,
+        exclude_col=exclude_col,
         allow_local_fallback=allow_local_fallback,
         sep=sep,
     )
@@ -98,6 +100,19 @@ def build_dataset_context(
         labels = [[x.strip() for x in s.split(",") if x.strip()] for s in dev[resolved_target]]
         resolved_classes = tuple(sorted({x for row in labels for x in row}))
 
+    if exclude_col is not None:
+        excluded_mask = (
+            partitions["particao"].eq("desenvolvimento")
+            & partitions[exclude_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+            .isin({"true", "1", "yes"})
+        )
+        n_excluded = int(excluded_mask.sum())
+    else:
+        n_excluded = 0
+
     dataset = DatasetContext(
         frame=dev,
         targets=y,
@@ -110,6 +125,8 @@ def build_dataset_context(
             "split_sha256": actual_split_sha,
             "n_development": int(len(dev)),
             "n_audit_reserved": int((partitions.particao == "auditoria").sum()),
+            "n_excluded": n_excluded,
+            "exclude_column": exclude_col,
             "target_column": resolved_target,
             "group_column": "grupo_franquia",
         },
