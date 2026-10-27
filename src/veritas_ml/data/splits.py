@@ -17,7 +17,7 @@ from ..core.config import (
     ensure_runtime_dirs,
 )
 from ..core.contracts import DatasetContext
-from .loader import load_development, sha256
+from .loader import _truthy_mask, load_development, sha256
 
 
 def make_grouped_folds(
@@ -101,13 +101,8 @@ def build_dataset_context(
         resolved_classes = tuple(sorted({x for row in labels for x in row}))
 
     if exclude_col is not None:
-        excluded_mask = (
-            partitions["particao"].eq("desenvolvimento")
-            & partitions[exclude_col]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin({"true", "1", "yes"})
+        excluded_mask = partitions["particao"].eq("desenvolvimento") & _truthy_mask(
+            partitions[exclude_col]
         )
         n_excluded = int(excluded_mask.sum())
     else:

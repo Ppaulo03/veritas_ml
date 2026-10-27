@@ -20,6 +20,16 @@ def sha256(path: str | Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def _truthy_mask(series: pd.Series) -> pd.Series:
+    """Evaluate stringified boolean flags ('true', '1', 'yes') case-insensitively."""
+    return (
+        series.astype(str)
+        .str.strip()
+        .str.lower()
+        .isin({"true", "1", "yes"})
+    )
+
+
 def clean_text(text: str) -> str:
     """Strip standard editorial footers (e.g., MAL Rewrite) and normalize whitespace."""
     cleaned = re.sub(
@@ -129,14 +139,7 @@ def load_development(
     if exclude_col is not None:
         if exclude_col not in parts.columns:
             raise ValueError(f"Coluna de exclusão ausente: {exclude_col}")
-        excluded = (
-            parts[exclude_col]
-            .astype(str)
-            .str.strip()
-            .str.lower()
-            .isin({"true", "1", "yes"})
-        )
-        dev_mask &= ~excluded
+        dev_mask &= ~_truthy_mask(parts[exclude_col])
 
     g_dev = set(parts.loc[dev_mask, "grupo_franquia"])
     g_aud = set(parts.loc[parts["particao"].eq("auditoria"), "grupo_franquia"])
